@@ -1,204 +1,199 @@
-# Diagnostic Module for Unity IL2CPP Analysis
+# Internal Diagnostic Module for Mobile 3D Games
 
-## Overview
+Модуль для академического исследования производительности и анализа игровых движков Unity на Android (ARM64).
 
-Internal diagnostic framework for academic research into mobile game engine behavior, rendering pipelines, and entity systems. Designed for ARM64 Android with minimal footprint and stealth considerations.
+## ⚠️ Дисклеймер
 
-## Architecture
+Этот проект предназначен **исключительно** для:
+- Закрытых исследовательских целей
+- Академического изучения игровых движков
+- Анализа ложных срабатываний защитных систем
+- Тестирования в изолированных средах
+
+**Не используйте этот код для:**
+- Получения преимуществ в многопользовательских играх
+- Обхода систем античита
+- Нарушения условий обслуживания игр
+
+## Архитектура
 
 ```
 diagnostic_module/
-├── core/           # Memory management and entity tracking
-├── math/           # Vector/matrix math and view projections
-├── features/       # Scene visualization and camera analysis
-├── renderer/       # OpenGL/Vulkan render backends and ImGui overlay
-├── hooks/          # Render pipeline and input interception
-├── utils/          # String encryption and obfuscation
-└── main.cpp        # Entry points and lifecycle management
+├── include/           # Заголовочные файлы
+│   ├── diag_module.hpp       # Основной API
+│   ├── secure_types.hpp      # Безопасные типы и обфускация
+│   ├── math_ops.hpp          # Математические операции
+│   ├── memory_layout.hpp     # Работа с памятью
+│   ├── renderer.hpp          # Визуализация
+│   └── aim_system.hpp        # Система наведения
+├── src/               # Исходный код
+│   ├── diag_module.cpp       # Реализация модуля
+│   ├── aim_system.cpp        # Алгоритмы наведения
+│   ├── renderer.cpp          # Рендеринг
+│   └── hook_impl.cpp         # Реализация хуков
+├── example_loader.cpp # Пример загрузчика
+└── CMakeLists.txt     # Конфигурация сборки
 ```
 
-## Features
+## Возможности
 
-### Scene Visualization
-- 2D/3D bounding box rendering
-- Skeletal hierarchy visualization
-- Health indicator bars
-- Trajectory prediction lines
-- Distance-based fade culling
+### 1. Безопасная инициализация
+- Позиционно-независимый код (PIC)
+- Относительные смещения от базы модуля
+- Минимальное количество системных вызовов
+- Отсутствие прямых вызовов ptrace/syscall
 
-### Camera Analysis
-- Multiple smoothing algorithms (Linear, Exponential, Bezier, Spring)
-- Velocity-based prediction
-- FOV-based target filtering
-- Latency and jitter metrics
-- Bone priority targeting
+### 2. Визуализация
+- 3D -> 2D проекция с учётом матрицы вида
+- Bounding boxes для объектов
+- Скелетная визуализация
+- Цветовая индикация состояния
+- Дистанционное затухание
 
-### Entity Management
-- IL2CPP object parsing
-- Transform hierarchy tracking
-- Bone matrix resolution
-- State validation
+### 3. Система наведения
+- Bezier-кривые для плавности
+- Экспоненциальное сглаживание
+- Приоритет по типам костей
+- Компенсация скорости цели
+- Человекоподобные микро-движения
 
-### Anti-Detection Measures
-- Compile-time string encryption (XOR + rotation)
-- Control flow obfuscation
-- Memory protection awareness
-- Minimal syscall usage
-- No thread name modifications
-- Relative pointer arithmetic only
+### 4. Защита от детектирования
+- XOR-шифрование строк на этапе компиляции
+- Junk-код для маскировки
+- Обфускация констант
+- Рандомизация таймингов
+- Минимизация аллокаций
 
-## Building
+## Сборка
 
-### Requirements
-- Android NDK r25 or later
+### Требования
+- Android NDK r25 или новее
 - CMake 3.20+
-- C++23 support
+- Clang/LLVM для ARM64
 
-### Build Commands
+### Команды сборки
 
 ```bash
+# Установка NDK path
+export ANDROID_NDK=/path/to/android-ndk
+
+# Создание директории сборки
 mkdir build && cd build
-cmake -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake \
-      -DANDROID_ABI=arm64-v8a \
-      -DANDROID_PLATFORM=android-26 \
-      -DCMAKE_BUILD_TYPE=Release \
-      ..
-make -j$(nproc)
+
+# Генерация проекта
+cmake .. \
+    -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+    -DANDROID_ABI=arm64-v8a \
+    -DANDROID_PLATFORM=android-29 \
+    -DCMAKE_BUILD_TYPE=Release
+
+# Сборка
+cmake --build . --parallel
+
+# Результат: libdiagnostic_module.so
 ```
 
-### CMake Options
-- `ENABLE_OBFUSCATION`: Enable control flow obfuscation (default: ON)
-- `ENABLE_OVERLAY`: Build with ImGui overlay (default: ON)
-- `STRIP_SYMBOLS`: Strip debug symbols (default: ON)
+## Использование
 
-## Integration
+### Инициализация
 
-### Java/Kotlin Loader
+```cpp
+#include "diag_module.hpp"
 
-```kotlin
-class DiagnosticModule {
-    companion object {
-        init {
-            System.loadLibrary("DiagnosticModule")
-        }
-    }
+// В загрузчике после загрузки игры
+uintptr_t game_base = get_module_base("libil2cpp.so");
+size_t game_size = get_module_size("libil2cpp.so");
+
+bool success = dm::diagnostic_module::instance().initialize(game_base, game_size);
+```
+
+### Настройка через конфигурацию
+
+```cpp
+auto& config = dm::diagnostic_module::instance().config();
+config.enable_esp = true;
+config.enable_skeleton = true;
+config.esp_max_distance = 300.0f;
+```
+
+### Рендер-коллбэк
+
+```cpp
+// Из hooked render функции
+void hooked_present(...) {
+    // Вызов оригинальной функции
+    original_present(...);
     
-    external fun nativeInit(gameBaseAddr: Long)
-    external fun nativeShutdown()
-    external fun nativeToggleMenu()
-    external fun nativeGetEntityCount(): Int
+    // Рендер модуля
+    dm::diagnostic_module::instance().on_render(draw_list, width, height);
 }
 ```
 
-### Initialization
+## Конфигурация оффсетов
 
-The module initializes via JNI from an existing Android context:
-
-1. Load library into process
-2. Call `nativeInit()` with module base address
-3. Module hooks render pipeline automatically
-4. Overlay appears on next frame
-
-## Configuration
-
-### Entity Scan Offsets
-
-Configure per-game offsets in `main.cpp` initialization:
+Перед использованием необходимо обновить структуру `game_offsets_t` в `memory_layout.hpp`:
 
 ```cpp
-core::EntityScanConfig config;
-config.entity_list_offset = 0x...;    // Game-specific
-config.health_offset = 0x...;         // From IL2CPP dump
-config.position_offset = 0x...;       // Transform position
-// etc.
+struct game_offsets_t {
+    // Адреса относительно базы модуля
+    static constexpr ptrdiff_t GOM_OFFSET = 0xXXXXXXX;
+    static constexpr ptrdiff_t CAMERA_MATRIX_OFFSET = 0xXXXXXXX;
+    
+    // Оффсеты полей сущностей
+    static constexpr ptrdiff_t POSITION_OFFSET = 0xXX;
+    static constexpr ptrdiff_t HEALTH_OFFSET = 0xXX;
+    // ... и т.д.
+};
 ```
 
-### Visualization Options
+## Интеграция с ImGui
 
+Модуль ожидает существующий ImGui контекст. Для автономного использования:
+
+1. Добавьте ImGui в `external/imgui/`
+2. Используйте бэкенды для Android/OpenGL ES
+3. Модуль автоматически создаст контекст при инициализации
+
+## Отладка
+
+Для включения логирования:
 ```cpp
-features::VisualConfig visual;
-visual.show_2d_boxes = true;
-visual.show_skeleton = true;
-visual.max_render_distance = 500.0f;
+config.enable_debug_log = true;
 ```
 
-### Camera Analysis
+**Важно**: Отладка должна быть отключена в production для избежания детектирования.
 
-```cpp
-features::CameraAnalyzerConfig cam;
-cam.smoothing_type = SmoothingType::Exponential;
-cam.smoothing_factor = 0.15f;
-cam.use_prediction = true;
+## Технические детали
+
+### Математика проекции
+
+Мировые координаты преобразуются в экранные:
+```
+clip = ViewProjMatrix * vec4(world, 1.0)
+ndc = clip.xyz / clip.w
+screen.x = (ndc.x + 1) * 0.5 * width
+screen.y = (1 - ndc.y) * 0.5 * height
 ```
 
-## Technical Details
+### Алгоритм сглаживания
 
-### Memory Safety
-- All memory reads validated against `/proc/self/maps`
-- RAII wrappers for mapped regions
-- Volatile access patterns prevent optimization
-- Cache-friendly prefetch hints
+Комбинация:
+1. Bezier-кривая для профиля движения
+2. Экспоненциальный decay для отзывчивости
+3. Персонализированные множители на осях
 
-### Rendering
-- OpenGL ES 3.x backend with batch rendering
-- Minimal state changes per frame
-- VAO/VBO pre-allocation
-- Blend-only overlay (no depth/stencil)
+### Безопасность памяти
 
-### Hook Implementation
-- ARM64 inline hooks with trampoline
-- Instruction cache coherence maintained
-- Original function preservation
-- Minimal hook size (4-8 bytes typical)
+- Валидация всех указателей перед разыменованием
+- Проверка принадлежности к модулю
+- Atomic операции для thread-safety
 
-## Security Considerations
+## Лицензия
 
-This module is designed for:
-- Academic research into game engine architecture
-- Performance analysis and profiling
-- Educational reverse engineering
+This project is for educational and research purposes only.
 
-**Not intended for:**
-- Online game cheating
-- Circumventing anti-cheat systems
-- Commercial exploitation
+## Благодарности
 
-Users are responsible for complying with:
-- Game Terms of Service
-- Local laws regarding reverse engineering
-- Academic institution policies
-
-## Performance
-
-- CPU: <1ms per frame typical
-- Memory: ~2MB working set
-- Draw calls: 1-10 depending on entity count
-- Entity limit: 64 (configurable)
-
-## Troubleshooting
-
-### Hook fails to install
-- Check SELinux permissive mode
-- Verify function alignment
-- Ensure target is executable
-
-### No entities detected
-- Verify offsets match game version
-- Check entity list pointer resolution
-- Enable debug logging
-
-### Overlay not visible
-- Confirm GL context is current
-- Check blend state
-- Verify viewport dimensions
-
-## License
-
-Academic use only. See LICENSE for details.
-
-## References
-
-- Unity IL2CPP Internals
-- ARM64 Architecture Reference
-- OpenGL ES 3.2 Specification
-- Android NDK Documentation
+- Dear ImGui - графический интерфейс
+- Unity Technologies - документация IL2CPP
+- Сообщество реверс-инжиниринга - методики анализа

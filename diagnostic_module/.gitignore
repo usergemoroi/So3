@@ -1,40 +1,35 @@
-# Build outputs
+# Build directories
 build/
 cmake-build-*/
+out/
+
+# Compiled binaries
 *.so
-*.o
 *.a
-*.out
+*.o
+*.obj
 
 # IDE
 .idea/
 .vscode/
-*.iml
-.cmake/
-CMakeCache.txt
-CMakeFiles/
-cmake_install.cmake
-compile_commands.json
-
-# Android
-*.apk
-*.dex
-*.class
-.gradle/
-local.properties
-
-# Debug symbols
-*.sym
-*.dSYM/
-
-# Temporary files
 *.swp
 *.swo
 *~
+
+# OS
 .DS_Store
 Thumbs.db
 
-# Keys and sensitive
-credentials/
-*.keystore
-*.jks
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+
+# Android
+.cxx/
+*.apk
+*.aab
