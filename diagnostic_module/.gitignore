@@ -1,0 +1,40 @@
+# Build outputs
+build/
+cmake-build-*/
+*.so
+*.o
+*.a
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.cmake/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+
+# Android
+*.apk
+*.dex
+*.class
+.gradle/
+local.properties
+
+# Debug symbols
+*.sym
+*.dSYM/
+
+# Temporary files
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Keys and sensitive
+credentials/
+*.keystore
+*.jks
