@@ -6,6 +6,7 @@
 #include <dlfcn.h>
 #include <sys/mman.h>
 #include <android/log.h>
+#include "config.hpp"
 #include "il2cpp_noroot.hpp"
 #include "hooks_noroot.hpp"
 #include "protection_advanced.hpp"
@@ -16,23 +17,6 @@
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
-
-struct ModConfig {
-    bool esp_enabled = false;
-    bool esp_skeleton = false;
-    bool esp_box = false;
-    bool esp_distance = false;
-    bool esp_health = false;
-    bool esp_name = false;
-    
-    bool aimbot_enabled = false;
-    bool aimbot_visible_only = true;
-    bool aimbot_team_check = true;
-    float aimbot_fov = 90.0f;
-    float aimbot_smooth = 5.0f;
-    
-    bool menu_visible = true;
-};
 
 ModConfig g_Config;
 JavaVM* g_JavaVM = nullptr;

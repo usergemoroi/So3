@@ -6,6 +6,7 @@ LOCAL_MODULE := modmenu_noroot
 LOCAL_SRC_FILES := main_noroot.cpp
 LOCAL_C_INCLUDES := $(LOCAL_PATH)
 LOCAL_LDLIBS := -llog -ldl -landroid
+LOCAL_STATIC_LIBRARIES := c++_static
 LOCAL_CPPFLAGS := -std=c++17 \
                   -fexceptions \
                   -frtti \
