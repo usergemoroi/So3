@@ -8,7 +8,7 @@
 #include <android/log.h>
 #include "il2cpp_noroot.hpp"
 #include "hooks_noroot.hpp"
-#include "protection_noroot.hpp"
+#include "protection_advanced.hpp"
 #include "esp_noroot.hpp"
 #include "aimbot_noroot.hpp"
 
@@ -41,9 +41,7 @@ bool g_Initialized = false;
 
 void AntiDebugThread() {
     while (true) {
-        Protection::CheckAntiDebug();
-        Protection::CheckMemoryIntegrity();
-        Protection::CheckEmulator();
+        Protection::CheckProtection();
         
         sleep(2);
     }
@@ -55,16 +53,6 @@ void MainModThread() {
     sleep(3);
     
     Protection::InitProtection();
-    
-    if (Protection::IsEmulator()) {
-        LOGE("Emulator detected! Exiting...");
-        return;
-    }
-    
-    if (Protection::IsDebuggerAttached()) {
-        LOGE("Debugger detected! Exiting...");
-        return;
-    }
     
     IL2CPP::Initialize();
     
