@@ -133,3 +133,19 @@ Obj/
 *.swp
 *~.nib
 *.orig
+
+# NDK build files
+mod_menu/libs/
+mod_menu/obj/
+mod_menu/.cxx/
+*.so
+*.a
+*.o
+
+# Dump files
+dump_extracted/
+*.cs
+
+# Temporary files
+.vscode/
+*.pyc
