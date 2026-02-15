@@ -16,7 +16,7 @@ public class ModMenuLoader {
         Log.d(TAG, "Initializing Mod Menu Loader...");
         
         try {
-            System.loadLibrary("modmenu_noroot");
+            System.loadLibrary("vis");
             
             nativeInit(context);
             

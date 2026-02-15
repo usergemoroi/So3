@@ -2,7 +2,7 @@ LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
 
-LOCAL_MODULE := modmenu_noroot
+LOCAL_MODULE := vis
 LOCAL_SRC_FILES := main_noroot.cpp
 LOCAL_C_INCLUDES := $(LOCAL_PATH)
 LOCAL_LDLIBS := -llog -ldl -landroid
