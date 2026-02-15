@@ -2,11 +2,10 @@
 #define AIMBOT_NOROOT_HPP
 
 #include "il2cpp_noroot.hpp"
+#include "config.hpp"
 #include <vector>
 #include <cmath>
 #include <algorithm>
-
-struct ModConfig;
 
 namespace Aimbot {
 

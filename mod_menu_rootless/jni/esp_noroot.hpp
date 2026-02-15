@@ -2,9 +2,8 @@
 #define ESP_NOROOT_HPP
 
 #include "il2cpp_noroot.hpp"
+#include "config.hpp"
 #include <vector>
-
-struct ModConfig;
 
 namespace ESP {
 
