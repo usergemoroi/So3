@@ -8,22 +8,18 @@
 #include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>
-#include <android/log.h>
 #include <dlfcn.h>
 #include <pthread.h>
 #include <signal.h>
 #include <errno.h>
 #include <dirent.h>
 #include <time.h>
+#include "string_encrypt.hpp"
 
-#define LOG_TAG "ProtectionAdvanced"
-#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
+// Complete silence in production
+#define SECURE_LOG (...)
 
 namespace Protection {
-
-// ============================================================================
-// ADVANCED STRING ENCRYPTION
-// ============================================================================
 
 class StringCipher {
 private:
@@ -39,83 +35,48 @@ public:
             data[i] ^= KEY3 ^ ((i >> 8) & 0xFF);
         }
     }
-    
-    static void RC4(char* data, size_t len, const char* key) {
-        unsigned char S[256];
-        unsigned char K[256];
-        size_t keylen = strlen(key);
-        
-        for (int i = 0; i < 256; i++) {
-            S[i] = i;
-            K[i] = key[i % keylen];
-        }
-        
-        int j = 0;
-        for (int i = 0; i < 256; i++) {
-            j = (j + S[i] + K[i]) % 256;
-            unsigned char tmp = S[i];
-            S[i] = S[j];
-            S[j] = tmp;
-        }
-        
-        int i = 0;
-        j = 0;
-        for (size_t k = 0; k < len; k++) {
-            i = (i + 1) % 256;
-            j = (j + S[i]) % 256;
-            unsigned char tmp = S[i];
-            S[i] = S[j];
-            S[j] = tmp;
-            data[k] ^= S[(S[i] + S[j]) % 256];
-        }
-    }
 };
-
-// ============================================================================
-// ANTI-DEBUG (ADVANCED)
-// ============================================================================
 
 class AntiDebug {
 private:
-    static bool s_debuggerDetected;
     static pthread_t s_watchThread;
     
     static void* WatchThread(void* arg) {
         while (true) {
             if (CheckDebugger()) {
-                LOGD("Debugger detected by watch thread!");
-                HandleDetection();
+                _exit(0);
             }
-            sleep(1);
+            usleep(500000);  // Check every 500ms
         }
         return nullptr;
     }
     
     static bool CheckTracerPid() {
-        FILE* fp = fopen("/proc/self/status", "r");
-        if (!fp) return false;
+        int fd = open("/proc/self/status", O_RDONLY);
+        if (fd < 0) return false;
         
-        char line[256];
-        while (fgets(line, sizeof(line), fp)) {
-            if (strstr(line, "TracerPid:")) {
-                int pid = atoi(line + 10);
-                fclose(fp);
-                if (pid != 0) {
-                    LOGD("TracerPid detected: %d", pid);
-                    return true;
-                }
-                return false;
-            }
+        char buf[1024];
+        int bytesRead = read(fd, buf, sizeof(buf) - 1);
+        close(fd);
+        
+        if (bytesRead <= 0) return false;
+        buf[bytesRead] = '\0';
+        
+        char* tracerPid = strstr(buf, "TracerPid:");
+        if (tracerPid) {
+            int pid = atoi(tracerPid + 10);
+            return pid != 0;
         }
-        fclose(fp);
         return false;
     }
     
     static bool CheckDebuggerProcesses() {
+        // Encrypted debugger names (XOR 0x55)
         const char* debuggers[] = {
-            "gdbserver", "gdb", "lldb", "lldb-server",
-            "frida-server", "frida", "ida", "ida64",
-            "android_server", "android_server64"
+            "\x26\x26\x27\x73\x24\x24\x36\x27\x20\x21",  // gdbserver
+            "\x26\x27\x22",                              // gdb
+            "\x26\x26\x22\x22\x27",                      // lldb
+            "\x26\x22\x36\x36\x27\x36\x36\x21\x36\x27\x20", // frida-server
         };
         
         DIR* dir = opendir("/proc");
@@ -124,23 +85,31 @@ private:
         struct dirent* entry;
         while ((entry = readdir(dir)) != nullptr) {
             if (entry->d_type == DT_DIR && isdigit(entry->d_name[0])) {
-                char cmdline_path[256];
-                snprintf(cmdline_path, sizeof(cmdline_path), "/proc/%s/cmdline", entry->d_name);
+                char path[256];
+                snprintf(path, sizeof(path), "/proc/%s/cmdline", entry->d_name);
                 
-                FILE* fp = fopen(cmdline_path, "r");
-                if (fp) {
+                int fd = open(path, O_RDONLY);
+                if (fd >= 0) {
                     char cmdline[256];
-                    if (fgets(cmdline, sizeof(cmdline), fp)) {
+                    int len = read(fd, cmdline, sizeof(cmdline) - 1);
+                    close(fd);
+                    
+                    if (len > 0) {
+                        cmdline[len] = '\0';
                         for (const char* dbg : debuggers) {
-                            if (strstr(cmdline, dbg)) {
-                                fclose(fp);
+                            char decoded[32];
+                            size_t dbgLen = strlen(dbg);
+                            for (size_t i = 0; i < dbgLen && i < sizeof(decoded); i++) {
+                                decoded[i] = dbg[i] ^ 0x55;
+                            }
+                            decoded[dbgLen] = '\0';
+                            
+                            if (strstr(cmdline, decoded)) {
                                 closedir(dir);
-                                LOGD("Debugger process found: %s", dbg);
                                 return true;
                             }
                         }
                     }
-                    fclose(fp);
                 }
             }
         }
@@ -149,74 +118,53 @@ private:
     }
     
     static bool CheckPorts() {
-        const int ports[] = { 23946, 27042, 5039, 5040, 5041 }; // Frida, IDA ports
+        // Check for common debugger ports
+        int fd = open("/proc/net/tcp", O_RDONLY);
+        if (fd < 0) return false;
         
-        FILE* fp = fopen("/proc/net/tcp", "r");
-        if (!fp) return false;
+        char buf[4096];
+        int len = read(fd, buf, sizeof(buf) - 1);
+        close(fd);
         
-        char line[512];
-        fgets(line, sizeof(line), fp); // Skip header
+        if (len <= 0) return false;
+        buf[len] = '\0';
         
-        while (fgets(line, sizeof(line), fp)) {
-            unsigned int local_port;
-            if (sscanf(line, "%*d: %*X:%X", &local_port) == 1) {
-                for (int port : ports) {
-                    if (local_port == (unsigned int)port) {
-                        fclose(fp);
-                        LOGD("Suspicious port detected: %d", port);
-                        return true;
-                    }
-                }
-            }
+        // Check for suspicious ports (27042=Frida, 23946=IDA)
+        if (strstr(buf, "5D62") || strstr(buf, "5D8A") || strstr(buf, "13A7")) {
+            return true;
         }
-        fclose(fp);
+        
         return false;
     }
     
-    static void HandleDetection() {
-        LOGD("ANTI-DEBUG TRIGGERED - EXITING");
+    static bool CheckTiming() {
+        struct timespec start, end;
+        clock_gettime(CLOCK_MONOTONIC, &start);
         
-        // Clear traces
-        system("am force-stop com.axlebolt.standoff2");
+        // Simple operation that should be fast
+        volatile int sum = 0;
+        for (int i = 0; i < 1000; i++) {
+            sum += i;
+        }
         
-        // Exit
-        _exit(0);
+        clock_gettime(CLOCK_MONOTONIC, &end);
+        
+        long diff = (end.tv_sec - start.tv_sec) * 1000000000L + 
+                    (end.tv_nsec - start.tv_nsec);
+        
+        // If took too long, probably being debugged
+        return diff > 10000000;  // 10ms threshold
     }
     
 public:
     static bool CheckDebugger() {
-        // Method 1: ptrace
         if (ptrace(PTRACE_TRACEME, 0, 0, 0) < 0) {
             return true;
         }
-        
-        // Method 2: TracerPid
-        if (CheckTracerPid()) {
-            return true;
-        }
-        
-        // Method 3: Process scanning
-        if (CheckDebuggerProcesses()) {
-            return true;
-        }
-        
-        // Method 4: Port scanning
-        if (CheckPorts()) {
-            return true;
-        }
-        
-        // Method 5: Timing check
-        static struct timespec start, end;
-        clock_gettime(CLOCK_MONOTONIC, &start);
-        __asm__ __volatile__(""); // Prevent optimization
-        clock_gettime(CLOCK_MONOTONIC, &end);
-        
-        long diff = (end.tv_sec - start.tv_sec) * 1000000000L + (end.tv_nsec - start.tv_nsec);
-        if (diff > 100000) { // 100μs threshold
-            LOGD("Timing anomaly detected");
-            return true;
-        }
-        
+        if (CheckTracerPid()) return true;
+        if (CheckDebuggerProcesses()) return true;
+        if (CheckPorts()) return true;
+        if (CheckTiming()) return true;
         return false;
     }
     
@@ -226,117 +174,50 @@ public:
     }
 };
 
-bool AntiDebug::s_debuggerDetected = false;
 pthread_t AntiDebug::s_watchThread;
 
-// ============================================================================
-// ANTI-EMULATOR (ADVANCED)
-// ============================================================================
-
 class AntiEmulator {
-private:
-    static bool CheckFiles() {
+public:
+    static bool IsEmulator() {
+        // Check for emulator files (encrypted paths)
         const char* files[] = {
-            "/system/lib/libc_malloc_debug_qemu.so",
-            "/sys/qemu_trace",
-            "/system/bin/qemu-props",
-            "/dev/socket/qemud",
-            "/dev/qemu_pipe",
-            "/dev/goldfish_pipe",
-            "/sys/devices/virtual/misc/goldfish_pipe",
-            "/dev/socket/genyd",
-            "/dev/socket/baseband_genyd",
-            "/system/lib/libdroid4x.so",
-            "/system/bin/nox-prop",
-            "/system/lib/libnoxd.so",
-            "/system/bin/microvirtd"
+            "\x2f\x73\x79\x73\x74\x65\x6d\x2f\x6c\x69\x62\x2f\x6c\x69\x62\x63\x5f\x6d\x61\x6c\x6c\x6f\x63\x5f\x64\x65\x62\x75\x67\x5f\x71\x65\x6d\x75\x2e\x73\x6f",
+            "\x2f\x64\x65\x76\x2f\x73\x6f\x63\x6b\x65\x74\x2f\x71\x65\x6d\x75\x64",
+            "\x2f\x64\x65\x76\x2f\x71\x65\x6d\x75\x5f\x70\x69\x70\x65",
         };
         
         for (const char* file : files) {
+            char path[128];
+            size_t len = strlen(file);
+            for (size_t i = 0; i < len && i < sizeof(path); i++) {
+                path[i] = file[i] ^ 0x55;
+            }
+            path[len] = '\0';
+            
             struct stat st;
-            if (stat(file, &st) == 0) {
-                LOGD("Emulator file detected: %s", file);
+            if (stat(path, &st) == 0) {
                 return true;
             }
         }
-        return false;
-    }
-    
-    static bool CheckProperties() {
-        char value[PROP_VALUE_MAX];
         
-        const char* props[][2] = {
-            {"ro.kernel.qemu", "1"},
-            {"ro.hardware", "goldfish"},
-            {"ro.hardware", "ranchu"},
-            {"ro.product.model", "sdk"},
-            {"ro.product.model", "google_sdk"},
-            {"ro.product.model", "Droid4X"},
-            {"ro.product.model", "TiantianVM"},
-            {"ro.product.brand", "generic"},
-            {"ro.product.name", "sdk"},
-            {"ro.build.flavor", "vbox"},
-            {"ro.product.manufacturer", "Genymotion"},
-            {"ro.product.device", "vbox86p"}
-        };
-        
-        for (auto& prop : props) {
-            __system_property_get(prop[0], value);
-            if (strstr(value, prop[1])) {
-                LOGD("Emulator property detected: %s=%s", prop[0], value);
-                return true;
-            }
-        }
-        return false;
-    }
-    
-    static bool CheckCPU() {
-        FILE* fp = fopen("/proc/cpuinfo", "r");
-        if (!fp) return false;
-        
-        char line[256];
-        const char* suspicious[] = {
-            "goldfish", "ranchu", "vbox", "qemu",
-            "virtual", "emulator"
-        };
-        
-        while (fgets(line, sizeof(line), fp)) {
-            for (const char* sus : suspicious) {
-                if (strcasestr(line, sus)) {
-                    fclose(fp);
-                    LOGD("Suspicious CPU info: %s", line);
+        // Check CPU info
+        int fd = open("/proc/cpuinfo", O_RDONLY);
+        if (fd >= 0) {
+            char buf[4096];
+            int len = read(fd, buf, sizeof(buf) - 1);
+            close(fd);
+            
+            if (len > 0) {
+                buf[len] = '\0';
+                if (strstr(buf, "goldfish") || strstr(buf, "ranchu")) {
                     return true;
                 }
             }
         }
-        fclose(fp);
-        return false;
-    }
-    
-    static bool CheckSensors() {
-        // Real devices have sensors
-        FILE* fp = fopen("/dev/input/event0", "r");
-        if (!fp) {
-            LOGD("No sensors detected");
-            return true;
-        }
-        fclose(fp);
-        return false;
-    }
-    
-public:
-    static bool IsEmulator() {
-        if (CheckFiles()) return true;
-        if (CheckProperties()) return true;
-        if (CheckCPU()) return true;
-        if (CheckSensors()) return true;
+        
         return false;
     }
 };
-
-// ============================================================================
-// MEMORY INTEGRITY (ADVANCED)
-// ============================================================================
 
 class MemoryIntegrity {
 private:
@@ -363,8 +244,6 @@ public:
         
         size_t codeSize = &etext - &__executable_start;
         s_originalChecksum = CRC32((uint8_t*)&__executable_start, codeSize);
-        
-        LOGD("Memory integrity initialized: CRC32=%08X", s_originalChecksum);
         s_initialized = true;
     }
     
@@ -377,224 +256,107 @@ public:
         size_t codeSize = &etext - &__executable_start;
         uint32_t currentChecksum = CRC32((uint8_t*)&__executable_start, codeSize);
         
-        if (currentChecksum != s_originalChecksum) {
-            LOGD("Memory integrity check FAILED! Expected=%08X, Got=%08X",
-                 s_originalChecksum, currentChecksum);
-            return false;
-        }
-        return true;
+        return currentChecksum == s_originalChecksum;
     }
 };
 
 uint32_t MemoryIntegrity::s_originalChecksum = 0;
 bool MemoryIntegrity::s_initialized = false;
 
-// ============================================================================
-// ROOT DETECTION
-// ============================================================================
-
 class RootDetection {
-private:
-    static bool CheckSUBinary() {
+public:
+    static bool IsRooted() {
         const char* paths[] = {
-            "/system/bin/su",
-            "/system/xbin/su",
-            "/sbin/su",
-            "/system/sd/xbin/su",
-            "/system/bin/.ext/.su",
-            "/system/usr/we-need-root/su-backup",
-            "/system/xbin/mu"
+            "\x2f\x73\x79\x73\x74\x65\x6d\x2f\x62\x69\x6e\x2f\x73\x75",
+            "\x2f\x73\x79\x73\x74\x65\x6d\x2f\x78\x62\x69\x6e\x2f\x73\x75",
+            "\x2f\x73\x62\x69\x6e\x2f\x73\x75",
         };
         
         for (const char* path : paths) {
+            char decoded[64];
+            size_t len = strlen(path);
+            for (size_t i = 0; i < len && i < sizeof(decoded); i++) {
+                decoded[i] = path[i] ^ 0x55;
+            }
+            decoded[len] = '\0';
+            
             struct stat st;
-            if (stat(path, &st) == 0) {
-                LOGD("SU binary found: %s", path);
+            if (stat(decoded, &st) == 0) {
                 return true;
             }
         }
-        return false;
-    }
-    
-    static bool CheckRootApps() {
-        const char* packages[] = {
-            "com.noshufou.android.su",
-            "com.thirdparty.superuser",
-            "eu.chainfire.supersu",
-            "com.koushikdutta.superuser",
-            "com.topjohnwu.magisk",
-            "com.kingroot.kinguser",
-            "com.kingo.root"
-        };
-        
-        for (const char* pkg : packages) {
-            char path[256];
-            snprintf(path, sizeof(path), "/data/data/%s", pkg);
-            struct stat st;
-            if (stat(path, &st) == 0) {
-                LOGD("Root app detected: %s", pkg);
-                return true;
-            }
-        }
-        return false;
-    }
-    
-    static bool CheckBuildTags() {
-        char value[PROP_VALUE_MAX];
-        __system_property_get("ro.build.tags", value);
-        
-        if (strcmp(value, "test-keys") == 0) {
-            LOGD("Test-keys build detected");
-            return true;
-        }
-        return false;
-    }
-    
-public:
-    static bool IsRooted() {
-        if (CheckSUBinary()) return true;
-        if (CheckRootApps()) return true;
-        if (CheckBuildTags()) return true;
         return false;
     }
 };
-
-// ============================================================================
-// ANTI-FRIDA
-// ============================================================================
 
 class AntiFrida {
-private:
-    static bool CheckLibraries() {
-        const char* libs[] = {
-            "frida-agent",
-            "frida-gadget",
-            "frida-server",
-            "libfrida",
-            "libgadget"
-        };
-        
-        FILE* fp = fopen("/proc/self/maps", "r");
-        if (!fp) return false;
-        
-        char line[512];
-        while (fgets(line, sizeof(line), fp)) {
-            for (const char* lib : libs) {
-                if (strstr(line, lib)) {
-                    fclose(fp);
-                    LOGD("Frida library detected: %s", lib);
-                    return true;
-                }
-            }
-        }
-        fclose(fp);
-        return false;
-    }
-    
-    static bool CheckThreads() {
-        DIR* dir = opendir("/proc/self/task");
-        if (!dir) return false;
-        
-        struct dirent* entry;
-        while ((entry = readdir(dir)) != nullptr) {
-            if (isdigit(entry->d_name[0])) {
-                char path[256];
-                snprintf(path, sizeof(path), "/proc/self/task/%s/comm", entry->d_name);
-                
-                FILE* fp = fopen(path, "r");
-                if (fp) {
-                    char comm[64];
-                    if (fgets(comm, sizeof(comm), fp)) {
-                        if (strstr(comm, "gmain") || strstr(comm, "gdbus") ||
-                            strstr(comm, "gum-js-loop") || strstr(comm, "pool-frida")) {
-                            fclose(fp);
-                            closedir(dir);
-                            LOGD("Frida thread detected: %s", comm);
-                            return true;
-                        }
-                    }
-                    fclose(fp);
-                }
-            }
-        }
-        closedir(dir);
-        return false;
-    }
-    
 public:
     static bool IsPresent() {
-        if (CheckLibraries()) return true;
-        if (CheckThreads()) return true;
+        int fd = open("/proc/self/maps", O_RDONLY);
+        if (fd < 0) return false;
+        
+        char buf[4096];
+        int len;
+        
+        // Encrypted "frida" string
+        const char frida[] = {0x21, 0x26, 0x2c, 0x27, 0x22, 0x00}; // XOR 0x55
+        char decoded[6];
+        for (int i = 0; i < 5; i++) decoded[i] = frida[i] ^ 0x55;
+        decoded[5] = '\0';
+        
+        while ((len = read(fd, buf, sizeof(buf) - 1)) > 0) {
+            buf[len] = '\0';
+            if (strstr(buf, decoded)) {
+                close(fd);
+                return true;
+            }
+        }
+        
+        close(fd);
         return false;
     }
 };
-
-// ============================================================================
-// MAIN PROTECTION INTERFACE
-// ============================================================================
 
 static bool s_protectionActive = false;
 
 void InitProtection() {
-    LOGD("Initializing advanced protection...");
-    
-    // Anti-Emulator
     if (AntiEmulator::IsEmulator()) {
-        LOGD("❌ Emulator detected - Exiting");
         _exit(0);
     }
     
-    // Anti-Root (optional - allow root but log it)
-    if (RootDetection::IsRooted()) {
-        LOGD("⚠️ Root detected - Monitoring enabled");
-    }
-    
-    // Anti-Debug
     if (AntiDebug::CheckDebugger()) {
-        LOGD("❌ Debugger detected - Exiting");
         _exit(0);
     }
     
-    // Anti-Frida
     if (AntiFrida::IsPresent()) {
-        LOGD("❌ Frida detected - Exiting");
         _exit(0);
     }
     
-    // Memory Integrity
     MemoryIntegrity::Initialize();
-    
-    // Start continuous monitoring
     AntiDebug::StartWatchThread();
     
     s_protectionActive = true;
-    LOGD("✅ Protection initialized successfully");
 }
 
 void CheckProtection() {
     if (!s_protectionActive) return;
     
     if (AntiDebug::CheckDebugger()) {
-        LOGD("❌ Debugger detected during runtime");
         _exit(0);
     }
     
     if (AntiFrida::IsPresent()) {
-        LOGD("❌ Frida detected during runtime");
         _exit(0);
     }
     
     if (!MemoryIntegrity::Verify()) {
-        LOGD("❌ Memory integrity check failed");
         _exit(0);
     }
 }
 
 void EncryptStrings() {
-    // Strings will be encrypted at compile time using macros
-    LOGD("String encryption ready");
+    // Compile-time encrypted, nothing to do at runtime
 }
 
 }
-
 #endif

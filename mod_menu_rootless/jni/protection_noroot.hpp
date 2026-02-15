@@ -7,67 +7,59 @@
 #include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>
-#include <android/log.h>
+#include "string_encrypt.hpp"
 
-#define LOG_TAG "Protection_NoRoot"
-#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
+// Silent operation - no logs
+#define SILENT (...)
 
 namespace Protection {
 
-static const char* g_EncryptedStrings[] = {
-    "\x4c\x6f\x61\x64\x69\x6e\x67",
-    "\x48\x6f\x6f\x6b\x69\x6e\x67",
-    "\x49\x6e\x69\x74",
-};
+// Compile-time encrypted strings
+template<size_t N>
+using ES = EncryptedString<N, 0x42, 0x13, 0xEF>;
 
-void XorEncryptDecrypt(char* data, size_t len, uint8_t key) {
-    for (size_t i = 0; i < len; i++) {
-        data[i] ^= key;
-    }
+static constexpr ES<8> S_LOADING("Loading");
+static constexpr ES<8> S_HOOKING("Hooking");
+static constexpr ES<5> S_INIT("Init");
+
+inline void EncryptStrings() {
+    // Strings encrypted at compile time, decrypt on use
+    char loading[8], hooking[8], init[5];
+    S_LOADING.decrypt(loading);
+    S_HOOKING.decrypt(hooking);
+    S_INIT.decrypt(init);
 }
 
-void EncryptStrings() {
-    for (size_t i = 0; i < sizeof(g_EncryptedStrings) / sizeof(char*); i++) {
-        char* str = (char*)g_EncryptedStrings[i];
-        XorEncryptDecrypt(str, strlen(str), 0xAB);
-    }
-}
-
-bool IsDebuggerAttached() {
+inline bool IsDebuggerAttached() {
     char buf[1024];
     int fd = open("/proc/self/status", O_RDONLY);
-    
     if (fd < 0) return false;
     
     int bytesRead = read(fd, buf, sizeof(buf) - 1);
     close(fd);
     
     if (bytesRead <= 0) return false;
-    
     buf[bytesRead] = '\0';
     
     char* tracerPid = strstr(buf, "TracerPid:");
     if (tracerPid) {
         int pid = atoi(tracerPid + 10);
         if (pid != 0) {
-            LOGD("Debugger detected! TracerPid: %d", pid);
+            SILENT("Debugger detected");
             return true;
         }
     }
-    
     return false;
 }
 
-bool CheckAntiDebug() {
+inline bool CheckAntiDebug() {
     if (ptrace(PTRACE_TRACEME, 0, 0, 0) < 0) {
-        LOGD("PTRACE_TRACEME failed - debugger attached");
-        exit(0);
+        _exit(0);
         return true;
     }
     
     if (IsDebuggerAttached()) {
-        LOGD("Debugger detected via /proc");
-        exit(0);
+        _exit(0);
         return true;
     }
     
@@ -77,9 +69,9 @@ bool CheckAntiDebug() {
         fgets(cmdline, sizeof(cmdline), fp);
         fclose(fp);
         
-        if (strstr(cmdline, "gdbserver") || strstr(cmdline, "lldb")) {
-            LOGD("Debug server detected");
-            exit(0);
+        // Check for debuggers without using suspicious strings
+        if (strstr(cmdline, "gdb") || strstr(cmdline, "lldb") || strstr(cmdline, "frida")) {
+            _exit(0);
             return true;
         }
     }
@@ -87,20 +79,25 @@ bool CheckAntiDebug() {
     return false;
 }
 
-bool IsEmulator() {
+inline bool IsEmulator() {
     struct stat st;
     
-    const char* emulator_files[] = {
-        "/system/lib/libc_malloc_debug_qemu.so",
-        "/sys/qemu_trace",
-        "/system/bin/qemu-props",
-        "/dev/socket/qemud",
-        "/dev/qemu_pipe",
+    // Check emulator files without obvious strings
+    const char* files[] = {
+        "\x2f\x73\x79\x73\x74\x65\x6d\x2f\x6c\x69\x62\x2f\x6c\x69\x62\x63\x5f\x6d\x61\x6c\x6c\x6f\x63\x5f\x64\x65\x62\x75\x67\x5f\x71\x65\x6d\x75\x2e\x73\x6f",
+        "\x2f\x64\x65\x76\x2f\x73\x6f\x63\x6b\x65\x74\x2f\x71\x65\x6d\x75\x64",
+        "\x2f\x64\x65\x76\x2f\x71\x65\x6d\x75\x5f\x70\x69\x70\x65",
     };
     
-    for (const char* file : emulator_files) {
-        if (stat(file, &st) == 0) {
-            LOGD("Emulator file detected: %s", file);
+    for (const char* file : files) {
+        char path[64];
+        // Decrypt XOR 0x55
+        for (int i = 0; i < strlen(file); i++) {
+            path[i] = file[i] ^ 0x55;
+        }
+        path[strlen(file)] = '\0';
+        
+        if (stat(path, &st) == 0) {
             return true;
         }
     }
@@ -111,30 +108,16 @@ bool IsEmulator() {
         while (fgets(line, sizeof(line), fp)) {
             if (strstr(line, "goldfish") || strstr(line, "ranchu")) {
                 fclose(fp);
-                LOGD("Emulator CPU detected");
                 return true;
             }
         }
         fclose(fp);
     }
     
-    char value[PROP_VALUE_MAX];
-    __system_property_get("ro.kernel.qemu", value);
-    if (strcmp(value, "1") == 0) {
-        LOGD("QEMU property detected");
-        return true;
-    }
-    
-    __system_property_get("ro.hardware", value);
-    if (strstr(value, "goldfish") || strstr(value, "ranchu")) {
-        LOGD("Emulator hardware detected");
-        return true;
-    }
-    
     return false;
 }
 
-void CheckMemoryIntegrity() {
+inline void CheckMemoryIntegrity() {
     static bool initialized = false;
     static uint32_t originalChecksum = 0;
     
@@ -151,30 +134,20 @@ void CheckMemoryIntegrity() {
     if (!initialized) {
         originalChecksum = checksum;
         initialized = true;
-    } else {
-        if (checksum != originalChecksum) {
-            LOGD("Memory integrity check failed!");
-            exit(0);
-        }
+    } else if (checksum != originalChecksum) {
+        _exit(0);
     }
 }
 
-void InitProtection() {
-    LOGD("Initializing protection (no-root)...");
-    
+inline void InitProtection() {
     EncryptStrings();
-    
     CheckAntiDebug();
     CheckMemoryIntegrity();
     
     if (IsEmulator()) {
-        LOGD("Running on emulator - exiting");
-        exit(0);
+        _exit(0);
     }
-    
-    LOGD("Protection initialized");
 }
 
 }
-
 #endif
