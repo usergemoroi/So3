@@ -1,4 +1,4 @@
-./obj/local/arm64-v8a/objs/modmenu_noroot/main_noroot.o: main_noroot.cpp \
+./obj/local/x86_64/objs/modmenu_noroot/main_noroot.o: main_noroot.cpp \
   /home/engine/android-ndk-r25c/sources/cxx-stl/llvm-libc++/include/string \
   /home/engine/android-ndk-r25c/sources/cxx-stl/llvm-libc++/include/__config \
   /home/engine/android-ndk-r25c/sources/cxx-stl/llvm-libc++/include/string_view \
