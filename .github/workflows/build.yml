@@ -18,6 +18,8 @@ jobs:
     
     - name: Setup Android SDK
       uses: android-actions/setup-android@v2
+      env:
+        SKIP_JDK_VERSION_CHECK: true
       
     - name: Setup Android NDK
       uses: nttld/setup-ndk@v1
