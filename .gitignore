@@ -149,3 +149,13 @@ dump_extracted/
 # Temporary files
 .vscode/
 *.pyc
+
+# Build artifacts (Java)
+mod_menu/build/
+mod_menu/*.class
+
+# APK files
+*.apk
+*.apk.aligned
+work_*/
+modmenu.keystore
