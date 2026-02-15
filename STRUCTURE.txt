@@ -1,0 +1,152 @@
+Структура проекта после подготовки к сборке
+==============================================
+
+/home/engine/project/
+├── mod_menu_rootless/                 # Исходный код мод меню
+│   ├── java/                          # Java исходники
+│   │   └── com/modmenu/loader/
+│   │       ├── ModMenuLoader.java     [ИЗМЕНЕНО] - Загружает libvis.so
+│   │       ├── DexInjector.java       - Инъектор DEX
+│   │       ├── OverlayService.java    - UI меню
+│   │       └── LifecycleListener.java - Lifecycle трекер
+│   │
+│   ├── jni/                           # C++ исходники
+│   │   ├── main_noroot.cpp            - Главный native файл
+│   │   ├── Android.mk                [ИЗМЕНЕНО] - LOCAL_MODULE := vis
+│   │   ├── Application.mk             - Конфигурация NDK
+│   │   ├── config.hpp                 - Конфигурация
+│   │   ├── il2cpp_noroot.hpp         - IL2CPP хелперы
+│   │   ├── hooks_noroot.hpp          - Хуки
+│   │   ├── esp_noroot.hpp            - ESP функции
+│   │   ├── aimbot_noroot.hpp         - Aimbot функции
+│   │   ├── protection_noroot.hpp     - Защита
+│   │   ├── protection_advanced.hpp   - Продвинутая защита
+│   │   └── substrate.h               - Substrate-подобные хуки
+│   │
+│   ├── tools/                        # Инструменты
+│   │   ├── apk_patcher.py            - Python patcher
+│   │   ├── install.sh                - Скрипт установки
+│   │   └── test_device.sh            - Тестирование устройства
+│   │
+│   ├── [СКОРИПТЫ СБОРКИ]             # Создано автоматически
+│   ├── build_vis.sh                  - Сборка classes.dex + libvis.so
+│   ├── inject_to_apk.sh              - Внедрение в APK
+│   ├── build_and_inject_all.sh       - Полный процесс
+│   ├── build_java_only.sh            - Только Java часть
+│   │
+│   ├── [ДОКУМЕНТАЦИЯ]                # Создано автоматически
+│   ├── README_VIS.md                 - Основная инструкция
+│   ├── SETUP_GUIDE.md                - Установка SDK/NDK
+│   └── ...
+│   │
+│   ├── [ИСХОДНЫЕ СКРИПТЫ]             # Были в проекте
+│   ├── build.sh
+│   ├── auto_build_and_inject.sh
+│   ├── manual_build.sh
+│   └── ...
+│   │
+│   ├── libs/                         # [СОЗДАТСЯ ПРИ СБОРКЕ]
+│   │   ├── arm64-v8a/
+│   │   │   └── libvis.so            ← Native библиотека (ARM64)
+│   │   └── armeabi-v7a/
+│   │       └── libvis.so            ← Native библиотека (ARM32)
+│   │
+│   └── output/                       # [СОЗДАТСЯ ПРИ СБОРКЕ]
+│       └── classes.dex               ← Java DEX файл
+│
+├── [РАСПАКОВАННЫЙ APK]               # Текущее состояние
+├── AndroidManifest.xml
+├── assets/                           [БУДЕТ ОБНОВЛЁН]
+│   └── classes.dex                   ← Java мод меню
+├── lib/                              [БУДЕТ ОБНОВЛЁН]
+│   ├── arm64-v8a/
+│   │   └── libvis.so                ← Native мод (ARM64)
+│   └── armeabi-v7a/
+│       └── libvis.so                ← Native мод (ARM32)
+├── classes.dex                       ← Оригинальный DEX (app)
+├── classes2.dex
+├── classes3.dex
+├── classes4.dex
+├── classes5.dex
+├── classes6.dex
+├── classes7.dex
+├── classes8.dex
+├── res/                              ← Ресурсы приложения
+├── META-INF/                         ← Метаданные
+│
+├── [ДОКУМЕНТАЦИЯ]                    # Создано автоматически
+├── ИТОГОВАЯ_ИНСТРУКЦИЯ.md           ← Основная инструкция (на русском)
+├── BUILD_SUMMARY.md                  ← Сводка по сборке
+├── STRUCTURE.txt                     ← Этот файл
+│
+└── .gitignore                         [ИЗМЕНЕН]
+
+==============================================
+
+Процесс сборки:
+---------------
+
+1. Компиляция Java → classes.dex
+   java/ → javac → d8 → classes.dex
+
+2. Компиляция C++ → libvis.so
+   jni/ → ndk-build → libs/*/libvis.so
+
+3. Внедрение в APK
+   classes.dex → assets/classes.dex
+   libvis.so → lib/arm64-v8a/libvis.so
+               lib/armeabi-v7a/libvis.so
+
+4. Пересборка APK
+   apktool b . -o standoff2_modded.apk
+
+5. Подпись APK
+   apksigner sign standoff2_modded.apk
+
+6. Установка
+   adb install -r standoff2_modded.apk
+
+==============================================
+
+Файлы которые нужно создать при сборке:
+----------------------------------------
+
+/home/engine/project/assets/classes.dex
+/home/engine/project/lib/arm64-v8a/libvis.so
+/home/engine/project/lib/armeabi-v7a/libvis.so
+
+==============================================
+
+Требуется для сборки:
+---------------------
+
+✓ Java JDK 8+                       (УСТАНОВЛЕН: javac 17.0.18)
+✗ Android SDK Command Line Tools    (НЕТ - нужно установить)
+✗ Android NDK                       (НЕТ - нужно установить)
+✗ apktool                            (НЕТ - нужно установить)
+✗ apksigner / jarsigner              (НЕТ - нужно установить)
+
+Установка SDK/NDK:
+------------------
+
+См. инструкцию: mod_menu_rootless/SETUP_GUIDE.md
+
+Кратко:
+  1. Скачать Android Command Line Tools
+  2. Распаковать в ~/android-sdk
+  3. Установить переменные ANDROID_HOME
+  4. Установить через sdkmanager:
+     - platforms;android-30
+     - build-tools;30.0.3
+     - ndk;25.2.9519653
+  5. Установить переменную ANDROID_NDK_HOME
+
+==============================================
+
+Быстрый старт (после установки SDK/NDK):
+-----------------------------------------
+
+cd /home/engine/project/mod_menu_rootless
+./build_and_inject_all.sh
+
+==============================================

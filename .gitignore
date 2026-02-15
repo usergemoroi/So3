@@ -145,6 +145,7 @@ mod_menu_rootless/obj/
 mod_menu_rootless/.cxx/
 mod_menu_rootless/build/
 mod_menu_rootless/output/
+mod_menu_rootless/build/sources.txt
 *.so
 *.a
 *.o
