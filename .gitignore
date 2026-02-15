@@ -138,9 +138,31 @@ Obj/
 mod_menu/libs/
 mod_menu/obj/
 mod_menu/.cxx/
+mod_menu/build/
+mod_menu/*.class
+mod_menu_rootless/libs/
+mod_menu_rootless/obj/
+mod_menu_rootless/.cxx/
+mod_menu_rootless/build/
+mod_menu_rootless/output/
 *.so
 *.a
 *.o
+
+# APK files
+*.apk
+*.ap_
+*.apk.aligned
+*_modded.apk
+*_modded_signed.apk
+*_decoded/
+apk_patch_work/
+work_*/
+modmenu.keystore
+
+# DEX files
+*.dex
+classes*.dex
 
 # Dump files
 dump_extracted/
@@ -149,13 +171,16 @@ dump_extracted/
 # Temporary files
 .vscode/
 *.pyc
+*.log
+debug.log
 
-# Build artifacts (Java)
-mod_menu/build/
-mod_menu/*.class
+# Java build
+*.class
+build/
+bin/
+gen/
 
-# APK files
-*.apk
-*.apk.aligned
-work_*/
-modmenu.keystore
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
