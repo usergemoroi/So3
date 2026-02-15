@@ -1,0 +1,7 @@
+{
+  global:
+    JNI_OnLoad;
+    Java_com_modmenu_*;
+  local:
+    *;
+};
